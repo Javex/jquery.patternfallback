@@ -12,21 +12,193 @@
 */
 
 (function($){
-     $.fn.extend({
-         patternFallback: function(callback) {
-
-			var nativePatternSupport = (function(){
-				var i = document.createElement('input');
-				return ('pattern' in i);
-			})();
-				
-			// Pattern Check will halt here if the browser
-			// has native support for the placeholder attribute
-			if(nativePatternSupport){
-				return false;
-			}
+    $.fn.html5Validity = function() {
+        var BrowserSupportsInput = {
             
-            console.log("This is a test");
+            myInput     : false,
+            
+            createInput : function() {
+                if(!BrowserSupportsInput.myInput) {
+                    BrowserSupportsInput.myInput = document.createElement('input');
+                }
+                
+            },
+            
+            _           : function(attr) {
+                BrowserSupportsInput.createInput();
+                return (attr in BrowserSupportsInput.myInput);
+            }
+        };
+        
+        var ValidityHelper = {
+            inElements : function(candidates, element) {
+                element = jQuery(element);
+                var element_name = element.attr('name');
+                var element_id = element.attr('id');
+                var is_in = false;
+                var candidates_jquery = jQuery();
+                for(var i=0;i<candidates.length;i++) {
+                    candidates_jquery.add(candidates[i]);
+                }
+                alert(candidates_jquery.size())
+                candidates_jquery.each(function(){
+                   /**
+                    * check for the name first
+                    * if no name is set or name is used more than once
+                    * this is not standard compliant but we catch it here
+                    * 
+                    **/
+                   var candidate_name = jQuery(this).attr('name');
+                   alert(element_name + " " + candidate_name + " " + candidates_jquery.find("[name='"+candidate_name+"']").size())
+                   //alert("Candidate name: " + candidate_name + " Element name: " + element_name);
+                   if(element_name == candidate_name && candidates_jquery.find("[name='"+candidate_name+"']").size() < 2)
+                       is_in = true;
+                   
+                   /**
+                    * If it was not possible to identify it by name, we try the ID
+                    **/
+                   var candidate_id = jQuery(this).attr('id');
+                   if(element_id == candidate_id && candidates_jquery.find("#"+candidate_id).size() < 2)
+                       is_in = true;
+                   
+                   /**
+                    * More could be added later, ideas welcome
+                    **/
+                });
+                return is_in;
+            }
+        };
+        
+        function ValidityState() {
+            this.valueMissing       = false;
+            this.typeMismatch       = false;
+            this.patternMismatch    = false;
+            this.tooLong            = false;
+            this.rangeUnderflow     = false;
+            this.rangeOverflow      = false;
+            this.stepMismatch       = false;
+            this.customError        = false;
+            this.valid              = true;
+        }
+        
+        var checkValidity = function() {
+            var candidates = jQuery(this).parents("form:first").get(0).elements;
+            var element = this;
+            var valid = true;
+            if (ValidityHelper.inElements(candidates, element)) {
+                console.log("Element", element, " is a candidate for validation, checking it");
+                //Suffering from being missing 
+                console.log("Element ", element, " with value ", element.value, " and required set to ", element.required, " will be checked");
+                if(!BrowserSupportsInput._('required') && !element.value && element.required) {
+                    this.validity.valueMissing = true;
+                    valid = false;
+                }
+                    
+                // TODO: missing: support for type mismatch
+                if(!element.pattern && jQuery(element).attr('pattern'))
+                    element.pattern = jQuery(element).attr('pattern');
+                alert(element.pattern);
+                console.log("Element ", element, " with pattern ", element.pattern, " will be checked. jQuery says pattern is: " + jQuery(element).attr('pattern'));
+                if(!BrowserSupportsInput._('pattern') && element.pattern) {
+                    var pattern = "^" + element.pattern + "$";
+                    var regex = new RegExp(pattern);
+                    alert(pattern);
+                    console.log("regex: ", regex, " Value: ", element.value);
+                    if(!element.value.match(regex)) {
+                        this.validity.patternMismatch = true;
+                        valid = false;
+                    }
+                        
+                }
+                
+                if(!BrowserSupportsInput._('maxlength') && element.maxlength) {
+                    var maxlength = element.maxlength;
+                    if(element.value.length > maxlength) {
+                        this.validity.tooLong = true;
+                        valid = false;
+                    }
+                }
+            
+                //TODO: Check standard for fields where this attr is allowed
+                if(!BrowserSupportsInput._('min') && element.min) {
+                    var min = element.min;
+                    if(parseFloat(element.value) < min) {
+                        this.validity.rangeUnderflow = true;
+                        valid = false;
+                    }
+                }
+                
+                //TODO: Check standard for fields where this attr is allowed
+                if(!BrowserSupportsInput._('max') && element.max) {
+                    var max = element.max;
+                    if(parseFloat(element.value) > max) {
+                        this.validity.rangeOverflow = true;
+                        valid = false;
+                    }
+                }
+                
+                //TODO: Check standard for fields where this attr is allowed
+                //TODO: finish
+                if(!BrowserSupportsInput._('step')) {
+                    if(element.step) {
+                        if(element.step.toLowerCase() != "any") {
+                            
+                        }
+                    }
+                    
+                }
+                
+                if(!BrowserSupportsInput._('validationMessage') && element.validationMessage) {
+                    this.validity.customError = true;
+                    valid = false;
+                }
+                
+
+            } else {
+                alert("Nope...");
+                console.log("Element", element, " is not a candidate. It is not in ", candidates)
+            }
+                
+            
+            if(this.originalCheckValidity)
+                var originalValid = this.originalCheckValidity();
+            if(!originalValid)
+                originalValid = true;
+            this.validity.valid = valid && originalValid;
+            if(!this.validity.valid && !jQuery(this).hasClass("invalid"))
+                jQuery(this).addClass("invalid");
+            else if(this.validity.valid && jQuery(this).hasClass("invalid"))
+                jQuery(this).removeClass("invalid");
+            return this.validity.valid;
+        };
+        
+        var setCustomValidity = function(message) {
+            message = message.toString();
+            if(message == undefined)
+                message = "";
+            this.validationMessage = message;
+        };
+        
+        return this.each(function() {
+            if($(this).data('patterned')){
+                return false;
+            }
+            var input =	$(this);
+            input.data('patterned', true);
+            this.validity = new ValidityState();
+            if(this.checkValidity)
+                this.originalCheckValidity = this.checkValidity;
+            this.checkValidity = checkValidity;
+            
+            $(this).bind('change.html5Validity', this.checkValidity);
+            
+            return true;
+        });
+    };     
+})(jQuery);
+/*
+$.fn.extend({
+         patternFallback: function(callback) {
             
             return this.each(function(index, element) {
 				
@@ -36,7 +208,13 @@
 				}
 				
 				var input				=	$(this),
-					pattern     		=	input.attr('pattern'),
+                /* From the standard: 
+                 * This implies that the regular expression language used for this attribute 
+                 * is the same as that used in JavaScript, except that the pattern attribute 
+                 * is matched against the entire value, not just any subset (somewhat as if 
+                 * it implied a ^(?: at the start of the pattern and a )$ at the end).
+                 */
+				/*	pattern     		=	"^:?" + input.attr('pattern') + ")$",
                     value               =   input.val(),
                     regex               =   new RegExp(pattern);
 				
@@ -63,80 +241,7 @@
                     }
                 };
                 console.log("checkValidity Attribute set", input.get(0).checkValidity, input.get(0).validity);
-                
-                
-				/*	
-				// Create clone and switch
-				var $clone = createClone();
-				
-				// Add clone to callback arguments
-				callbackArguments.clone = $clone;
-				
-				$clone.insertAfter($input);
-				
-				var setState = function() {
-					if( $input.val().length <= 0 ){
-						$clone.show();
-						$input.hide();
-					} else {
-						$clone.hide();
-						$input.show().trigger('click');
-					}
-				};
-				
-				// Events for password fields
-				$input.bind('blur', setState);
-				
-				// Create a input element clone
-				function createClone(){
-					
-					var $el;
-					
-					if($input.context.nodeName.toLowerCase() == 'input') {
-						$el = $("<input />").attr({
-							'type'	: 'text'
-						});
-					} else if($input.context.nodeName.toLowerCase() == 'textarea') {
-						$el = $("<textarea />");	
-					} else {
-						throw 'PatternChecker only works with input and textareas'; 
-					}
-					
-					$el.attr({
-						'value'		: defaultValue,
-						'class'		: $input.attr('class')+' empty',
-						'size'		: $input.attr('size'),
-						'style'		: $input.attr('style'),
-						'tabindex' 	: $input.attr('tabindex'),
-						'rows' 		: $input.attr('rows'),
-						'cols'		: $input.attr('cols'),
-						'name'		: 'defaultvalue-clone-' + (((1+Math.random())*0x10000)|0).toString(16).substring(1)
-					});
-					
-					$el.focus(function(){
-					
-						// Hide text clone and show real password field
-						$el.hide();
-						$input.show();
-						
-						// Webkit and Moz need some extra time
-						// BTW $input.show(0,function(){$input.focus();}); doesn't work.
-						setTimeout(function () {
-							$input.focus();
-						}, 1);
-					
-					});				
-					
-					return $el;
-				}*/
-
-				//setState();
-				
-				if(callback){
-					callback(callbackArguments);
-				}	
 				
             });
         }
-    });
-})(jQuery);
+    });*/
